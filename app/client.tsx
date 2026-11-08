@@ -104,6 +104,7 @@ export function ClientPage() {
     const [contactKey, setContactKey] = useState(new Uint8Array(0))
     const [message, setMessage] = useState("")
     const [roomId, setRoomId] = useState("")
+    const [acceptedId, setAcceptedId] = useState("")
     const [tlsFinished, setTlsFinished] = useState<boolean>(false)
     const [, setReloadState] = useState("")
     const [, newTls] = useState("")
@@ -165,17 +166,19 @@ export function ClientPage() {
         const room = joinRoom({
             appId: "com.example.chat"
         }, tempId)
+        console.log(tempId)
         setRoomId(tempId)
         const action = room.makeAction<Payload>("action");
         if (!tlsFinished) {
             const tls = room.makeAction<tlsPayload>("tls")
-            tls.onMessage = (data) => {
+            tls.onMessage = (data, {peerId}) => {
                 const tlsRecivedValue = data.value
                 if (ed25519.verify(Uint8Array.fromBase64(data.signature), encoder.encode(JSON.stringify(tlsRecivedValue)), Uint8Array.fromBase64(currentContact.key))) {
                     const [tempSelfKey, tempContactKey] = deriveKeys(x25519PrivKey, Uint8Array.fromBase64(data.value.key), selfRandom, Uint8Array.fromBase64(data.value.random))
                     setSelfKey(tempSelfKey)
                     setContactKey(tempContactKey)
                     setTlsFinished(true)
+                    setAcceptedId(peerId)
                 }
             }
             room.onPeerJoin = peerId => {
@@ -185,7 +188,8 @@ export function ClientPage() {
             }
         }
         actionRef.current = action
-        action.onMessage = (data) => {
+        action.onMessage = (data, {peerId}) => {
+            if (peerId === acceptedId) {
             if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
                 const bytesData = Uint8Array.fromBase64(data.value)
                 const nonce = bytesData.slice(0, 12)
@@ -194,6 +198,7 @@ export function ClientPage() {
                 setMessages(messages.concat({ value: decoder.decode(decrypted), index: 0 }));
                 reloadState()
             }
+        }
         }
 
     }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
@@ -248,7 +253,7 @@ export function ClientPage() {
     function submitMessage(event: React.KeyboardEvent<HTMLTextAreaElement>) {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
-            if (message != '') {
+            if (message != '' && tlsFinished) {
                 messages.push({ value: message, index: 1 });
                 reloadState()
                 nonce = randomBytes(12)
@@ -272,7 +277,7 @@ export function ClientPage() {
     return (
         <div style={{ height: "100vh", margin: 0, display: 'flex', flexDirection: 'column' }}>
             <Header>
-                <p style={{ margin: 0, justifySelf: 'center' }}>Testing</p>
+                <h1 style={{ margin: 0, justifySelf: 'center' }}>Testing</h1>
                 <button onClick={shareIdButton}>Share Id</button>
                 <button onClick={handleSignOut} style={{ justifySelf: 'right' }}>Sign Out</button>
             </Header>
