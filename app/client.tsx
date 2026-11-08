@@ -12,7 +12,7 @@ import { db, Contact } from "./db";
 
 function Header({ children }: { children: React.ReactNode }) {
     return (
-        <div style={{ flex: 2.5, backgroundColor: "blue", display: 'grid', gridTemplateColumns: "1fr auto" }}>
+        <div style={{ flex: 2.5, backgroundColor: "blue", display: 'grid', gridTemplateColumns: "1fr auto auto" }}>
             {children}
         </div>
     )
@@ -90,6 +90,7 @@ type Payload = { value: string, signature: string }
 type tlsPayload = { value: { key: string, random: string }, signature: string }
 
 export function ClientPage() {
+    const [orgin, setOrgin] = useState("")
     const [messages, setMessages] = useState<{ value: string, index: number }[]>([])
     const [currentContact, setCurrentContact] = useState({ name: "Username", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" })
     const [contacts, setContacts] = useState<Contact[]>([])
@@ -113,7 +114,11 @@ export function ClientPage() {
     let nonce: Uint8Array;
     let aes;
     let encrypted: Uint8Array;
-    console.log(contacts)
+
+    // get orgin
+    useEffect(() => {
+        setOrgin(window.location.origin)
+    }, [])
 
     // get contacts from indexedb
     useEffect(() => {
@@ -259,10 +264,16 @@ export function ClientPage() {
         }
     }
 
+    function shareIdButton() {
+        navigator.clipboard.writeText(orgin + '/share?key=' + edPubKey.toBase64({alphabet: 'base64url'}))
+        console.log("Button Pressed")
+    }
+
     return (
         <div style={{ height: "100vh", margin: 0, display: 'flex', flexDirection: 'column' }}>
             <Header>
                 <p style={{ margin: 0, justifySelf: 'center' }}>Testing</p>
+                <button onClick={shareIdButton}>Share Id</button>
                 <button onClick={handleSignOut} style={{ justifySelf: 'right' }}>Sign Out</button>
             </Header>
             <div style={{ flex: 100, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
