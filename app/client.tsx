@@ -1,0 +1,239 @@
+"use client";
+import { useState, useEffect, useRef, act, Dispatch, SetStateAction } from "react";
+import { redirect, RedirectType } from "next/navigation";
+import { joinRoom, JoinRoom, MessageAction } from "trystero/nostr";
+import { ed25519, x25519 } from "@noble/curves/ed25519.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { hkdf } from "@noble/hashes/hkdf.js";
+import { gcm } from "@noble/ciphers/aes.js";
+import { randomBytes } from "@noble/ciphers/utils.js";
+import { db } from "./db";
+
+
+function Header({ children }: { children: React.ReactNode }) {
+    return (
+        <div style={{ flex: 2.5, backgroundColor: "blue", display: 'grid', gridTemplateColumns: "1fr auto" }}>
+            {children}
+        </div>
+    )
+}
+
+function ContactList({ contacts, onClick, newContact, setNewContact}: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement>, newContact: string, setNewContact: Dispatch<SetStateAction<string>>}) {
+    return (
+        <div style={{ flex: 1, backgroundColor: 'gray', display: 'flex', flexDirection: 'column', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
+            <div style={{flex: 100, display: 'flex', flexDirection: 'column'}}>
+            {contacts.map((x, i) => (<button key={i} onClick={onClick} data-id={x.key} style={{ backgroundColor: 'cyan', textAlign: 'center', borderRadius: 10, padding: 5 }}>{x.name}</button>))}
+            </div>
+            <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{flex: 2.5, backgroundColor: 'red', margin: 0}}></input>
+        </div>
+    )
+}
+
+function MessageWindow({ messages, contact, handleKeyDown, message, setMessage }: { messages: { index: number, value: string }[], contact: string, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, message: string, setMessage: Dispatch<SetStateAction<string>> }) {
+    return (
+        <div style={{ flex: 3, backgroundColor: '#2F3A57', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
+            <div style={{ paddingBottom: 25, margin: 0 }}><p style={{ backgroundColor: 'darkgray', textAlign: 'center', margin: 0 }}>{contact}</p></div>
+            {
+                messages.map((message, index) => (
+                    <div key={index} style={{ display: 'flex', justifyContent: message.index % 2 === 0 ? 'flex-start' : 'flex-end', padding: 10 }}>
+                        <span style={{ backgroundColor: 'red', borderRadius: 5, padding: 5, maxWidth: '35%', fieldSizing: 'content' }}>{message.value}</span>
+                    </div>
+                ))
+            }
+            <div style={{ display: 'flex', marginLeft: 'auto', padding: 10, minWidth: '10%', maxWidth: '35%' }}>
+                <textarea onKeyDown={event => {
+                    handleKeyDown(event)
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                        setMessage("")
+                    }
+                }} placeholder={"Enter Message"} value={message} onChange={event => setMessage(event.target.value)} style={{
+                    fieldSizing: 'content', width: "100%", backgroundColor: 'red', borderRadius: 5, padding: 5, resize: 'none'
+                }} />
+            </div>
+        </div>
+    )
+}
+
+function combineBytes(arr: Uint8Array[]) {
+    const totalLen = arr.reduce((total, array) => total + array.byteLength, 0);
+    const res = new Uint8Array(totalLen);
+    let offset = 0;
+    arr.forEach((array) => {
+        res.set(array, offset)
+        offset += array.byteLength
+    })
+    return res
+}
+
+function deriveKeys(privKey: Uint8Array, pubKey: Uint8Array, selfRand: Uint8Array, contactRand: Uint8Array) {
+    const combinedRand = [selfRand, contactRand]
+    combinedRand.sort()
+    const preSalt = combineBytes([Uint8Array.from([83, 101, 99, 117, 114, 101, 45, 67, 104, 97, 116, 45, 49, 46, 48
+    ]), ...combinedRand]);
+    const salt = sha256(preSalt);
+    const sharedSecret = x25519.getSharedSecret(privKey, pubKey);
+    const selfKey = hkdf(sha256, sharedSecret, salt, sha256(x25519.getPublicKey(privKey)), 32);
+    const contactKey = hkdf(sha256, sharedSecret, salt, sha256(pubKey), 32);
+    return [selfKey, contactKey]
+}
+
+type Payload = { value: string, signature: string }
+type tlsPayload = { value: { key: string, random: string }, signature: string }
+
+export function ClientPage() {
+    const [messages, setMessages] = useState<{ value: string, index: number }[]>([])
+    const [currentContact, setCurrentContact] = useState({ name: "Username", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" })
+    const [contacts, setContacts] = useState<{ name: string, key: string }[]>([{ name: "a a", key: "T1eBODe41C+C8VxExmDuNt85lryhpAVB2QBPWAIQ4CM=" }, { name: 'b b', key: 'yZ18+o9FdzDIEA1ZBVQz7LSELnYmM3D37xb1oWo633w=' }])
+    const [newContact, setNewContact] = useState("")
+    const [aesKey, setAesKey] = useState<Uint8Array>(new Uint8Array(0))
+    const [edPrivKey, setEdPrivKey] = useState<Uint8Array>(new Uint8Array(0))
+    const [edPubKey, setEdPubKey] = useState<Uint8Array>(new Uint8Array(0))
+    const [x25519PrivKey, setX25519PrivKey] = useState(new Uint8Array(0))
+    const [selfRandom, setSelfRandom] = useState(new Uint8Array(0))
+    const [selfKey, setSelfKey] = useState(new Uint8Array(0))
+    const [contactKey, setContactKey] = useState(new Uint8Array(0))
+    const [message, setMessage] = useState("")
+    const [roomId, setRoomId] = useState("")
+    const [tlsFinished, setTlsFinished] = useState<boolean>(false)
+    const [, setReloadState] = useState("")
+    const [, newTls] = useState("")
+    const actionRef = useRef<MessageAction<Payload> | null>(null)
+    const encoder = new TextEncoder()
+    const decoder = new TextDecoder()
+    let nonce: Uint8Array;
+    let aes;
+    let encrypted: Uint8Array;
+
+    // get contacts from indexedb
+    useEffect(() => {
+        db.contacts.toArray()
+    }, [])
+
+    // generate temporary random
+    useEffect(() => {
+        if (x25519PrivKey.length === 0) {
+            setX25519PrivKey(x25519.keygen().secretKey)
+        }
+        if (selfRandom.length === 0) {
+            setSelfRandom(crypto.getRandomValues(new Uint8Array(32)))
+        }
+    }, [newTls])
+
+    // tls and room logic
+    useEffect(() => {
+        if (x25519PrivKey.length === 0) {
+            return;
+        }
+        if (selfRandom.length === 0) {
+            return;
+        }
+        const encoder = new TextEncoder()
+        const aesKeyTemp = localStorage.getItem("aesKey")
+        const edPrivKeyTemp = localStorage.getItem("edKeyPriv")
+        if (aesKeyTemp === null || edPrivKeyTemp === null) {
+            redirect("/login", RedirectType.replace)
+        }
+        if (aesKeyTemp != null && edPrivKeyTemp != null) {
+            setAesKey(Uint8Array.fromBase64(aesKeyTemp))
+            setEdPrivKey(Uint8Array.fromBase64(edPrivKeyTemp))
+            setEdPubKey(ed25519.getPublicKey(Uint8Array.fromBase64(edPrivKeyTemp)))
+        }
+        if (edPubKey.length === 0 && edPrivKey.length != 0) {
+            setEdPubKey(ed25519.getPublicKey(edPrivKey))
+        }
+        const roomList = [currentContact.key, ed25519.getPublicKey(Uint8Array.fromBase64(edPrivKeyTemp)).toBase64()]
+        roomList.sort()
+        const tempId = roomList.join("")
+        const room = joinRoom({
+            appId: "com.example.chat"
+        }, tempId)
+        setRoomId(tempId)
+        const action = room.makeAction<Payload>("action");
+        if (!tlsFinished) {
+            const tls = room.makeAction<tlsPayload>("tls")
+            tls.onMessage = (data) => {
+                const tlsRecivedValue = data.value
+                if (ed25519.verify(Uint8Array.fromBase64(data.signature), encoder.encode(JSON.stringify(tlsRecivedValue)), Uint8Array.fromBase64(currentContact.key))) {
+                    const [tempSelfKey, tempContactKey] = deriveKeys(x25519PrivKey, Uint8Array.fromBase64(data.value.key), selfRandom, Uint8Array.fromBase64(data.value.random))
+                    setSelfKey(tempSelfKey)
+                    setContactKey(tempContactKey)
+                    setTlsFinished(true)
+                }
+            }
+            room.onPeerJoin = peerId => {
+                const pubKey = x25519.getPublicKey(x25519PrivKey)
+                const tlsSendValue = { key: pubKey.toBase64(), random: selfRandom.toBase64() }
+                tls.send({ value: tlsSendValue, signature: ed25519.sign(encoder.encode(JSON.stringify(tlsSendValue)), Uint8Array.fromBase64(edPrivKeyTemp)).toBase64() }, { target: peerId })
+            }
+        }
+        actionRef.current = action
+        action.onMessage = (data) => {
+            if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
+                const bytesData = Uint8Array.fromBase64(data.value)
+                const nonce = bytesData.slice(0, 12)
+                aes = gcm(contactKey, nonce, nonce)
+                const decrypted = aes.decrypt(bytesData.slice(12))
+                setMessages(messages.concat({ value: decoder.decode(decrypted), index: 0 }));
+                reloadState()
+            }
+        }
+
+    }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
+    )
+
+    function reloadState() {
+        setReloadState(crypto.randomUUID())
+    }
+
+
+    function handeClick(event: React.MouseEvent<HTMLButtonElement>) {
+        if (event.currentTarget.dataset.id === undefined) {
+            return;
+        }
+        const eventData = { name: event.currentTarget.textContent, key: event.currentTarget.dataset.id }
+        setCurrentContact(eventData)
+        if (currentContact != eventData) {
+            setTlsFinished(false)
+            newTls(crypto.randomUUID())
+        }
+    }
+
+    function handleSignOut() {
+        localStorage.removeItem("aesKey")
+        localStorage.removeItem("edKey")
+        redirect("/login", RedirectType.replace)
+    }
+
+    function submitMessage(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            if (message != '') {
+                messages.push({ value: message, index: 1 });
+                reloadState()
+                nonce = randomBytes(12)
+                aes = gcm(selfKey, nonce, nonce)
+                encrypted = aes.encrypt(encoder.encode(message))
+                encoder.encode(message)
+                const messagePayload = { value: combineBytes([nonce, encrypted]).toBase64(), signature: ed25519.sign(combineBytes([nonce, encrypted]), edPrivKey).toBase64() }
+                console.log(messagePayload)
+                actionRef.current?.send(messagePayload)
+            }
+        }
+        else {
+        }
+    }
+
+    return (
+        <div style={{ height: "100vh", margin: 0, display: 'flex', flexDirection: 'column' }}>
+            <Header>
+                <p style={{ margin: 0, justifySelf: 'center' }}>Testing</p>
+                <button onClick={handleSignOut} style={{ justifySelf: 'right' }}>Sign Out</button>
+            </Header>
+            <div style={{ flex: 100, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
+                <ContactList contacts={contacts} onClick={handeClick} newContact={newContact} setNewContact={setNewContact}/>
+                <MessageWindow messages={messages} contact={currentContact.name} handleKeyDown={submitMessage} message={message} setMessage={setMessage} />
+            </div>
+        </div>
+    )
+}
+;
