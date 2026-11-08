@@ -11,7 +11,7 @@ const db = new Dexie('Database') as Dexie & {
 }
 
 db.version(1).stores({
-    contact: '++id, name, key'
+    contacts: '++id, name, key'
 })
 
 export type { Contact }

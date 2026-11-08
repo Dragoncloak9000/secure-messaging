@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, act, Dispatch, SetStateAction } from "react";
+import { useState, useEffect, useRef, act, Dispatch, SetStateAction, SubmitEventHandler } from "react";
 import { redirect, RedirectType } from "next/navigation";
 import { joinRoom, JoinRoom, MessageAction } from "trystero/nostr";
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
@@ -7,7 +7,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
-import { db } from "./db";
+import { db, Contact } from "./db";
 
 
 function Header({ children }: { children: React.ReactNode }) {
@@ -18,13 +18,15 @@ function Header({ children }: { children: React.ReactNode }) {
     )
 }
 
-function ContactList({ contacts, onClick, newContact, setNewContact}: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement>, newContact: string, setNewContact: Dispatch<SetStateAction<string>>}) {
+function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmit }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement>, newContact: string, setNewContact: Dispatch<SetStateAction<string>>, handleSubmit: SubmitEventHandler<HTMLFormElement> }) {
     return (
         <div style={{ flex: 1, backgroundColor: 'gray', display: 'flex', flexDirection: 'column', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
-            <div style={{flex: 100, display: 'flex', flexDirection: 'column'}}>
-            {contacts.map((x, i) => (<button key={i} onClick={onClick} data-id={x.key} style={{ backgroundColor: 'cyan', textAlign: 'center', borderRadius: 10, padding: 5 }}>{x.name}</button>))}
+            <div style={{ flex: 100, display: 'flex', flexDirection: 'column' }}>
+                {contacts.map((x, i) => (<button key={i} onClick={onClick} data-id={x.key} style={{ backgroundColor: 'cyan', textAlign: 'center', borderRadius: 10, padding: 5 }}>{x.name}</button>))}
             </div>
-            <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{flex: 2.5, backgroundColor: 'red', margin: 0}}></input>
+            <form onSubmit={event => handleSubmit(event)} style={{ margin: 0, padding: 0, display: 'contents' }}>
+                <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{ flex: 2.5, backgroundColor: 'red', margin: 0 }}></input>
+            </form>
         </div>
     )
 }
@@ -77,13 +79,20 @@ function deriveKeys(privKey: Uint8Array, pubKey: Uint8Array, selfRand: Uint8Arra
     return [selfKey, contactKey]
 }
 
+async function addContact(contact: { name: string, key: string }) {
+    await db.contacts.add({
+        name: contact.name,
+        key: contact.key
+    })
+}
+
 type Payload = { value: string, signature: string }
 type tlsPayload = { value: { key: string, random: string }, signature: string }
 
 export function ClientPage() {
     const [messages, setMessages] = useState<{ value: string, index: number }[]>([])
     const [currentContact, setCurrentContact] = useState({ name: "Username", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" })
-    const [contacts, setContacts] = useState<{ name: string, key: string }[]>([{ name: "a a", key: "T1eBODe41C+C8VxExmDuNt85lryhpAVB2QBPWAIQ4CM=" }, { name: 'b b', key: 'yZ18+o9FdzDIEA1ZBVQz7LSELnYmM3D37xb1oWo633w=' }])
+    const [contacts, setContacts] = useState<Contact[]>([])
     const [newContact, setNewContact] = useState("")
     const [aesKey, setAesKey] = useState<Uint8Array>(new Uint8Array(0))
     const [edPrivKey, setEdPrivKey] = useState<Uint8Array>(new Uint8Array(0))
@@ -97,17 +106,21 @@ export function ClientPage() {
     const [tlsFinished, setTlsFinished] = useState<boolean>(false)
     const [, setReloadState] = useState("")
     const [, newTls] = useState("")
+    const [changeDexie, newDexie] = useState("")
     const actionRef = useRef<MessageAction<Payload> | null>(null)
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()
     let nonce: Uint8Array;
     let aes;
     let encrypted: Uint8Array;
+    console.log(contacts)
 
     // get contacts from indexedb
     useEffect(() => {
-        db.contacts.toArray()
-    }, [])
+        db.contacts.toArray().then(cont => {
+            setContacts(cont)
+        })
+    }, [changeDexie])
 
     // generate temporary random
     useEffect(() => {
@@ -185,6 +198,29 @@ export function ClientPage() {
         setReloadState(crypto.randomUUID())
     }
 
+    function handleContactSubmit(event: React.SubmitEvent<HTMLFormElement>) {
+        event.preventDefault()
+        let newCont = true
+        if (newContact != "") {
+            contacts.forEach((contact) => {
+                if (contact.name === newContact) {
+                    newCont = false
+                    db.contacts.delete(contact.id)
+                    newDexie(crypto.randomUUID())
+                }
+            })
+            if (newCont) {
+                const key = window.prompt("Person's Key")
+                if (key != null) {
+                    addContact({ name: newContact, key: key })
+                    newDexie(crypto.randomUUID())
+                }
+            }
+            setNewContact("")
+            console.log("Sumbited")
+        }
+    }
+
 
     function handeClick(event: React.MouseEvent<HTMLButtonElement>) {
         if (event.currentTarget.dataset.id === undefined) {
@@ -230,7 +266,7 @@ export function ClientPage() {
                 <button onClick={handleSignOut} style={{ justifySelf: 'right' }}>Sign Out</button>
             </Header>
             <div style={{ flex: 100, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
-                <ContactList contacts={contacts} onClick={handeClick} newContact={newContact} setNewContact={setNewContact}/>
+                <ContactList contacts={contacts} onClick={handeClick} newContact={newContact} setNewContact={setNewContact} handleSubmit={handleContactSubmit} />
                 <MessageWindow messages={messages} contact={currentContact.name} handleKeyDown={submitMessage} message={message} setMessage={setMessage} />
             </div>
         </div>
