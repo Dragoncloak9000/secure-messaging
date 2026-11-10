@@ -31,10 +31,28 @@ function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmi
     )
 }
 
-function MessageWindow({ messages, contact, handleKeyDown, message, setMessage }: { messages: { index: number, value: string }[], contact: string, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, message: string, setMessage: Dispatch<SetStateAction<string>> }) {
+function TextBox({ message, setMessage, handleKeyDown, connected }: { message: string, setMessage: Dispatch<SetStateAction<string>>, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, connected: boolean }) {
+    if (connected) {
+        return (
+            <textarea onKeyDown={event => {
+                handleKeyDown(event)
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    setMessage("")
+                }
+            }} placeholder={"Enter Message"} value={message} onChange={event => setMessage(event.target.value)} style={{
+                fieldSizing: 'content', width: "100%", backgroundColor: 'red', borderRadius: 5, padding: 5, resize: 'none'
+            }} />
+        )
+    }
+    else {
+        return null
+    }
+}
+
+function MessageWindow({ messages, contact, handleKeyDown, message, setMessage, connected }: { messages: { index: number, value: string }[], contact: string, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, message: string, setMessage: Dispatch<SetStateAction<string>>, connected: boolean }) {
     return (
         <div style={{ flex: 3, backgroundColor: '#2F3A57', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
-            <div style={{ paddingBottom: 25, margin: 0 }}><p style={{ backgroundColor: 'darkgray', textAlign: 'center', margin: 0 }}>{contact}</p></div>
+            <div style={{ paddingBottom: 25, margin: 0 }}><p style={{ backgroundColor: 'darkgray', textAlign: 'center', margin: 0 }}>{connected ? contact : "NOT CONNECTED"}</p></div>
             {
                 messages.map((message, index) => (
                     <div key={index} style={{ display: 'flex', justifyContent: message.index % 2 === 0 ? 'flex-start' : 'flex-end', padding: 10 }}>
@@ -43,14 +61,7 @@ function MessageWindow({ messages, contact, handleKeyDown, message, setMessage }
                 ))
             }
             <div style={{ display: 'flex', marginLeft: 'auto', padding: 10, minWidth: '10%', maxWidth: '35%' }}>
-                <textarea onKeyDown={event => {
-                    handleKeyDown(event)
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                        setMessage("")
-                    }
-                }} placeholder={"Enter Message"} value={message} onChange={event => setMessage(event.target.value)} style={{
-                    fieldSizing: 'content', width: "100%", backgroundColor: 'red', borderRadius: 5, padding: 5, resize: 'none'
-                }} />
+                <TextBox message={message} setMessage={setMessage} handleKeyDown={handleKeyDown} connected={connected}/>
             </div>
         </div>
     )
@@ -171,7 +182,7 @@ export function ClientPage() {
         const action = room.makeAction<Payload>("action");
         if (!tlsFinished) {
             const tls = room.makeAction<tlsPayload>("tls")
-            tls.onMessage = (data, {peerId}) => {
+            tls.onMessage = (data, { peerId }) => {
                 const tlsRecivedValue = data.value
                 if (ed25519.verify(Uint8Array.fromBase64(data.signature), encoder.encode(JSON.stringify(tlsRecivedValue)), Uint8Array.fromBase64(currentContact.key))) {
                     const [tempSelfKey, tempContactKey] = deriveKeys(x25519PrivKey, Uint8Array.fromBase64(data.value.key), selfRandom, Uint8Array.fromBase64(data.value.random))
@@ -188,21 +199,24 @@ export function ClientPage() {
             }
         }
         actionRef.current = action
-        action.onMessage = (data, {peerId}) => {
+        action.onMessage = (data, { peerId }) => {
             if (peerId === acceptedId) {
-            if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
-                const bytesData = Uint8Array.fromBase64(data.value)
-                const nonce = bytesData.slice(0, 12)
-                aes = gcm(contactKey, nonce, nonce)
-                const decrypted = aes.decrypt(bytesData.slice(12))
-                setMessages(messages.concat({ value: decoder.decode(decrypted), index: 0 }));
-                reloadState()
+                if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
+                    const bytesData = Uint8Array.fromBase64(data.value)
+                    const nonce = bytesData.slice(0, 12)
+                    aes = gcm(contactKey, nonce, nonce)
+                    const decrypted = aes.decrypt(bytesData.slice(12))
+                    addToCurrentMessages({ value: decoder.decode(decrypted), index: 0 });
+                }
             }
-        }
         }
 
     }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
     )
+
+    function addToCurrentMessages(message: {value: string, index: number}) {
+        setMessages(prev => [...prev, message])
+    }
 
     function reloadState() {
         setReloadState(crypto.randomUUID())
@@ -270,7 +284,7 @@ export function ClientPage() {
     }
 
     function shareIdButton() {
-        navigator.clipboard.writeText(orgin + '/share?key=' + edPubKey.toBase64({alphabet: 'base64url'}))
+        navigator.clipboard.writeText(orgin + '/share?key=' + edPubKey.toBase64({ alphabet: 'base64url' }))
         console.log("Button Pressed")
     }
 
@@ -283,7 +297,7 @@ export function ClientPage() {
             </Header>
             <div style={{ flex: 100, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
                 <ContactList contacts={contacts} onClick={handeClick} newContact={newContact} setNewContact={setNewContact} handleSubmit={handleContactSubmit} />
-                <MessageWindow messages={messages} contact={currentContact.name} handleKeyDown={submitMessage} message={message} setMessage={setMessage} />
+                <MessageWindow messages={messages} contact={currentContact.name} handleKeyDown={submitMessage} message={message} setMessage={setMessage} connected={tlsFinished}/>
             </div>
         </div>
     )
