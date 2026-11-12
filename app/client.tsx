@@ -12,18 +12,35 @@ import { db, Contact } from "./db";
 
 function Header({ children }: { children: React.ReactNode }) {
     return (
-        <div style={{ flex: 2.5, backgroundColor: "blue", display: 'grid', gridTemplateColumns: "1fr auto auto" }}>
+        <div style={{ flex: 2.5, backgroundColor: "#F2F0EF", display: 'grid', gridTemplateColumns: "1fr auto auto", borderBottom: 'solid', borderColor: 'darkgray'}}>
             {children}
+        </div>
+    )
+}
+
+function ContactButton({value, index, onClick}: {value: {name: string, key: string}, index: number, onClick: React.MouseEventHandler<HTMLButtonElement>}) {
+    const [background, setBackground] = useState("transparent")
+    return (
+        <button key={index} onMouseEnter={event => setBackground("lightgrey")} onMouseLeave={event => setBackground("transparent")} onClick={onClick} data-id={value.key} style={{textAlign: 'left', padding: 5, outline: 'none', backgroundColor: background, backgroundRepeat: 'no-repeat', border: 'none', borderRadius: "5px"}}>{value.name}</button>
+    )
+}
+
+function ContactButtonsList({ contacts, onClick }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement> }) {
+    return (
+        <div style={{ flex: 100, display: 'flex', flexDirection: 'column', paddingTop: '5%', paddingLeft: '5%', paddingRight: '5%' }}>
+            {contacts.map((x, i) => (<ContactButton key={i} value={x} index={i} onClick={onClick}/>))}
         </div>
     )
 }
 
 function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmit }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement>, newContact: string, setNewContact: Dispatch<SetStateAction<string>>, handleSubmit: SubmitEventHandler<HTMLFormElement> }) {
     return (
-        <div style={{ flex: 1, backgroundColor: 'gray', display: 'flex', flexDirection: 'column', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
-            <div style={{ flex: 100, display: 'flex', flexDirection: 'column' }}>
-                {contacts.map((x, i) => (<button key={i} onClick={onClick} data-id={x.key} style={{ backgroundColor: 'cyan', textAlign: 'center', borderRadius: 10, padding: 5 }}>{x.name}</button>))}
-            </div>
+        <div style={{
+            flex: 1, backgroundColor: 'whitesmoke', display: 'flex', flexDirection: 'column', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0,
+            borderRight: "solid", borderColor: 'darkgray'
+        }
+        }>
+            <ContactButtonsList contacts={contacts} onClick={onClick}/>
             <form onSubmit={event => handleSubmit(event)} style={{ margin: 0, padding: 0, display: 'contents' }}>
                 <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{ flex: 2.5, backgroundColor: 'red', margin: 0 }}></input>
             </form>
@@ -40,7 +57,7 @@ function TextBox({ message, setMessage, handleKeyDown, connected }: { message: s
                     setMessage("")
                 }
             }} placeholder={"Enter Message"} value={message} onChange={event => setMessage(event.target.value)} style={{
-                fieldSizing: 'content', width: "100%", backgroundColor: 'red', borderRadius: 5, padding: 5, resize: 'none'
+                fieldSizing: 'content', width: "100%", backgroundColor: '#6495ed', borderRadius: 10, padding: 5, resize: 'none'
             }} />
         )
     }
@@ -51,17 +68,17 @@ function TextBox({ message, setMessage, handleKeyDown, connected }: { message: s
 
 function MessageWindow({ messages, contact, handleKeyDown, message, setMessage, connected }: { messages: { index: number, value: string }[], contact: string, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, message: string, setMessage: Dispatch<SetStateAction<string>>, connected: boolean }) {
     return (
-        <div style={{ flex: 3, backgroundColor: '#2F3A57', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
-            <div style={{ paddingBottom: 25, margin: 0 }}><p style={{ backgroundColor: 'darkgray', textAlign: 'center', margin: 0 }}>{connected ? contact : "NOT CONNECTED"}</p></div>
+        <div style={{ flex: 3, backgroundColor: 'lightgray', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
+            <div style={{ paddingBottom: 25, paddingLeft: "10%", paddingRight: '10%', paddingTop: '1%', margin: 0 }}><p style={{ backgroundColor: 'royalblue', textAlign: 'center', margin: 0, overflowX: 'visible', borderRadius: "20px"}}>{connected ? contact : "NOT CONNECTED"}</p></div>
             {
                 messages.map((message, index) => (
-                    <div key={index} style={{ display: 'flex', justifyContent: message.index % 2 === 0 ? 'flex-start' : 'flex-end', padding: 10 }}>
-                        <span style={{ backgroundColor: 'red', borderRadius: 5, padding: 5, maxWidth: '35%', fieldSizing: 'content' }}>{message.value}</span>
+                    <div key={index} style={{ display: 'flex', justifyContent: message.index === 0 ? 'flex-start' : 'flex-end', padding: 10 }}>
+                        <span style={{ backgroundColor: '#6495ed', borderRadius: 10, padding: 5, maxWidth: '35%', fieldSizing: 'content', overflowWrap: 'anywhere'}}>{message.value}</span>
                     </div>
                 ))
             }
             <div style={{ display: 'flex', marginLeft: 'auto', padding: 10, minWidth: '10%', maxWidth: '35%' }}>
-                <TextBox message={message} setMessage={setMessage} handleKeyDown={handleKeyDown} connected={connected}/>
+                <TextBox message={message} setMessage={setMessage} handleKeyDown={handleKeyDown} connected={connected} />
             </div>
         </div>
     )
@@ -214,7 +231,7 @@ export function ClientPage() {
     }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
     )
 
-    function addToCurrentMessages(message: {value: string, index: number}) {
+    function addToCurrentMessages(message: { value: string, index: number }) {
         setMessages(prev => [...prev, message])
     }
 
@@ -291,13 +308,13 @@ export function ClientPage() {
     return (
         <div style={{ height: "100vh", margin: 0, display: 'flex', flexDirection: 'column' }}>
             <Header>
-                <h1 style={{ margin: 0, justifySelf: 'center' }}>Testing</h1>
+                <h1 style={{ margin: 0, justifySelf: 'center' }}>Secure Messaging App</h1>
                 <button onClick={shareIdButton}>Share Id</button>
                 <button onClick={handleSignOut} style={{ justifySelf: 'right' }}>Sign Out</button>
             </Header>
             <div style={{ flex: 100, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
                 <ContactList contacts={contacts} onClick={handeClick} newContact={newContact} setNewContact={setNewContact} handleSubmit={handleContactSubmit} />
-                <MessageWindow messages={messages} contact={currentContact.name} handleKeyDown={submitMessage} message={message} setMessage={setMessage} connected={tlsFinished}/>
+                <MessageWindow messages={messages} contact={currentContact.name} handleKeyDown={submitMessage} message={message} setMessage={setMessage} connected={tlsFinished} />
             </div>
         </div>
     )
