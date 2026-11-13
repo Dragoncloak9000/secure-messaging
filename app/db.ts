@@ -1,18 +1,18 @@
 import { Dexie, type EntityTable } from 'dexie';
 
-interface Contact {
-    id?: number;
-    name: string;
-    key: string
+interface Database {
+    user: string;
+    data: string;
+    nonce: string;
 }
 
 const db = new Dexie('Database') as Dexie & {
-    contacts: EntityTable<Contact, 'id'>
+    users: EntityTable<Database, 'user'>
 }
 
 db.version(1).stores({
-    contacts: '++id, name, key'
+    users: 'user, data, nonce'
 })
 
-export type { Contact }
+export type { Database }
 export { db };

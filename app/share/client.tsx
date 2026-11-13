@@ -1,14 +1,8 @@
 "use client";
 import { useRouter  } from "next/navigation";
-import { db } from "../db";
 import { useEffect, useRef, useState } from "react";
-
-async function addContact(contact: { name: string, key: string }) {
-    await db.contacts.add({
-        name: contact.name,
-        key: contact.key
-    })
-}
+import { addContact } from "../client";
+import { ed25519 } from "@noble/curves/ed25519.js";
 
 export function SharePage() {
     const router = useRouter()
@@ -21,7 +15,13 @@ export function SharePage() {
         if (key != null) {
             const name = window.prompt(`Name for key ${key}`)
             if (name != null) {
-                addContact({ name: name, key: Uint8Array.fromBase64(key, {alphabet: 'base64url'}).toBase64()})
+                const aesKey = localStorage.getItem("aesKey")
+                const edPrivKey = localStorage.getItem("edKeyPriv")
+                if (aesKey === null || edPrivKey === null) {
+                    router.replace("/login")
+                    return;
+                }
+                addContact({ name: name, key: Uint8Array.fromBase64(key, {alphabet: 'base64url'}).toBase64()}, Uint8Array.fromBase64(aesKey), ed25519.getPublicKey(Uint8Array.fromBase64(edPrivKey)))
             }
             router.replace("/")
         }

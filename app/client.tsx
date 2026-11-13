@@ -7,28 +7,28 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
-import { db, Contact } from "./db";
+import { db, Database } from "./db";
 
 
 function Header({ children }: { children: React.ReactNode }) {
     return (
-        <div style={{ flex: 2.5, backgroundColor: "#F2F0EF", display: 'grid', gridTemplateColumns: "1fr auto auto", borderBottom: 'solid', borderColor: 'darkgray'}}>
+        <div style={{ flex: 2.5, backgroundColor: "#F2F0EF", display: 'grid', gridTemplateColumns: "1fr auto auto", borderBottom: 'solid', borderColor: 'darkgray' }}>
             {children}
         </div>
     )
 }
 
-function ContactButton({value, index, onClick}: {value: {name: string, key: string}, index: number, onClick: React.MouseEventHandler<HTMLButtonElement>}) {
+function ContactButton({ value, index, onClick }: { value: { name: string, key: string }, index: number, onClick: React.MouseEventHandler<HTMLButtonElement> }) {
     const [background, setBackground] = useState("transparent")
     return (
-        <button key={index} onMouseEnter={event => setBackground("lightgrey")} onMouseLeave={event => setBackground("transparent")} onClick={onClick} data-id={value.key} style={{textAlign: 'left', padding: 5, outline: 'none', backgroundColor: background, backgroundRepeat: 'no-repeat', border: 'none', borderRadius: "5px"}}>{value.name}</button>
+        <button key={index} onMouseEnter={event => setBackground("lightgrey")} onMouseLeave={event => setBackground("transparent")} onClick={onClick} data-id={value.key} style={{ textAlign: 'left', padding: 5, outline: 'none', backgroundColor: background, backgroundRepeat: 'no-repeat', border: 'none', borderRadius: "5px" }}>{value.name}</button>
     )
 }
 
 function ContactButtonsList({ contacts, onClick }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement> }) {
     return (
         <div style={{ flex: 100, display: 'flex', flexDirection: 'column', paddingTop: '5%', paddingLeft: '5%', paddingRight: '5%' }}>
-            {contacts.map((x, i) => (<ContactButton key={i} value={x} index={i} onClick={onClick}/>))}
+            {contacts.map((x, i) => (<ContactButton key={i} value={x} index={i} onClick={onClick} />))}
         </div>
     )
 }
@@ -40,7 +40,7 @@ function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmi
             borderRight: "solid", borderColor: 'darkgray'
         }
         }>
-            <ContactButtonsList contacts={contacts} onClick={onClick}/>
+            <ContactButtonsList contacts={contacts} onClick={onClick} />
             <form onSubmit={event => handleSubmit(event)} style={{ margin: 0, padding: 0, display: 'contents' }}>
                 <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{ flex: 2.5, backgroundColor: 'red', margin: 0 }}></input>
             </form>
@@ -69,11 +69,11 @@ function TextBox({ message, setMessage, handleKeyDown, connected }: { message: s
 function MessageWindow({ messages, contact, handleKeyDown, message, setMessage, connected }: { messages: { index: number, value: string }[], contact: string, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, message: string, setMessage: Dispatch<SetStateAction<string>>, connected: boolean }) {
     return (
         <div style={{ flex: 3, backgroundColor: 'lightgray', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
-            <div style={{ paddingBottom: 25, paddingLeft: "10%", paddingRight: '10%', paddingTop: '1%', margin: 0 }}><p style={{ backgroundColor: 'royalblue', textAlign: 'center', margin: 0, overflowX: 'visible', borderRadius: "20px"}}>{connected ? contact : "NOT CONNECTED"}</p></div>
+            <div style={{ paddingBottom: 25, paddingLeft: "10%", paddingRight: '10%', paddingTop: '1%', margin: 0 }}><p style={{ backgroundColor: 'royalblue', textAlign: 'center', margin: 0, overflowX: 'visible', borderRadius: "20px" }}>{connected ? contact : "NOT CONNECTED"}</p></div>
             {
                 messages.map((message, index) => (
                     <div key={index} style={{ display: 'flex', justifyContent: message.index === 0 ? 'flex-start' : 'flex-end', padding: 10 }}>
-                        <span style={{ backgroundColor: '#6495ed', borderRadius: 10, padding: 5, maxWidth: '35%', fieldSizing: 'content', overflowWrap: 'anywhere'}}>{message.value}</span>
+                        <span style={{ backgroundColor: '#6495ed', borderRadius: 10, padding: 5, maxWidth: '35%', fieldSizing: 'content', overflowWrap: 'anywhere' }}>{message.value}</span>
                     </div>
                 ))
             }
@@ -107,11 +107,39 @@ function deriveKeys(privKey: Uint8Array, pubKey: Uint8Array, selfRand: Uint8Arra
     return [selfKey, contactKey]
 }
 
-async function addContact(contact: { name: string, key: string }) {
-    await db.contacts.add({
-        name: contact.name,
-        key: contact.key
-    })
+export async function addContact(contact: { name: string, key: string }, aesKey: Uint8Array, edPubKey: Uint8Array) {
+    const dbContent = await getDBContent(edPubKey, aesKey);
+    dbContent.contacts.push(contact);
+    const nonce = randomBytes(12);
+    const aes = gcm(aesKey, nonce);
+    const encoder = new TextEncoder()
+    const encrypted = aes.encrypt(encoder.encode(JSON.stringify(dbContent)))
+    await db.users.delete(edPubKey.toBase64())
+    await db.users.add({user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64()}, edPubKey.toBase64())
+}
+
+export async function removeContact(contact: {name: string, key: string}, aesKey: Uint8Array, edPubKey: Uint8Array) {
+    let dbContent = await getDBContent(edPubKey, aesKey);
+    dbContent.contacts = dbContent.contacts.filter(item => item.name != contact.name || item.key != contact.key)
+    const nonce = randomBytes(12);
+    const aes = gcm(aesKey, nonce)
+    const encoder = new TextEncoder();
+    const encrypted = aes.encrypt(encoder.encode(JSON.stringify(dbContent)))
+    await db.users.delete(edPubKey.toBase64())
+    await db.users.add({user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64()}, edPubKey.toBase64())
+}
+
+export async function getDBContent(pubKey: Uint8Array, aesKey: Uint8Array) {
+    const decoder = new TextDecoder()
+    const encryptedData = (await db.users.where('user').equals(pubKey.toBase64()).toArray())[0]
+    console.log(encryptedData)
+    if (!encryptedData) {
+        return {contacts: []}
+    }
+    const aes = gcm(aesKey, Uint8Array.fromBase64(encryptedData.nonce))
+    const decrypted: { contacts: { name: string, key: string }[] } = JSON.parse(decoder.decode(aes.decrypt(Uint8Array.fromBase64(encryptedData.data))))
+    console.log(decrypted)
+    return decrypted
 }
 
 type Payload = { value: string, signature: string }
@@ -121,7 +149,7 @@ export function ClientPage() {
     const [orgin, setOrgin] = useState("")
     const [messages, setMessages] = useState<{ value: string, index: number }[]>([])
     const [currentContact, setCurrentContact] = useState({ name: "Username", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" })
-    const [contacts, setContacts] = useState<Contact[]>([])
+    const [contacts, setContacts] = useState<{ name: string, key: string }[]>([])
     const [newContact, setNewContact] = useState("")
     const [aesKey, setAesKey] = useState<Uint8Array>(new Uint8Array(0))
     const [edPrivKey, setEdPrivKey] = useState<Uint8Array>(new Uint8Array(0))
@@ -148,13 +176,6 @@ export function ClientPage() {
     useEffect(() => {
         setOrgin(window.location.origin)
     }, [])
-
-    // get contacts from indexedb
-    useEffect(() => {
-        db.contacts.toArray().then(cont => {
-            setContacts(cont)
-        })
-    }, [changeDexie])
 
     // generate temporary random
     useEffect(() => {
@@ -231,6 +252,15 @@ export function ClientPage() {
     }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
     )
 
+    // get contacts from indexedb
+    useEffect(() => {
+        if (edPubKey.length === 0 || edPubKey.length === 0) {return}
+        (async () => {
+            setContacts((await getDBContent(edPubKey, aesKey)).contacts)
+        })()
+    }, [changeDexie, aesKey, edPubKey])
+
+
     function addToCurrentMessages(message: { value: string, index: number }) {
         setMessages(prev => [...prev, message])
     }
@@ -239,21 +269,23 @@ export function ClientPage() {
         setReloadState(crypto.randomUUID())
     }
 
-    function handleContactSubmit(event: React.SubmitEvent<HTMLFormElement>) {
+    async function handleContactSubmit(event: React.SubmitEvent<HTMLFormElement>) {
         event.preventDefault()
         let newCont = true
         if (newContact != "") {
-            contacts.forEach((contact) => {
+            contacts.forEach(async (contact) => {
                 if (contact.name === newContact) {
                     newCont = false
-                    db.contacts.delete(contact.id)
+                    const contactToRemove = contacts.find(item => item.name === newContact)
+                    if (contactToRemove === undefined) {return}
+                    await removeContact(contactToRemove, aesKey, edPubKey)
                     newDexie(crypto.randomUUID())
                 }
             })
             if (newCont) {
                 const key = window.prompt("Person's Key")
                 if (key != null) {
-                    addContact({ name: newContact, key: key })
+                    await addContact({ name: newContact, key: key }, aesKey, edPubKey)
                     newDexie(crypto.randomUUID())
                 }
             }
