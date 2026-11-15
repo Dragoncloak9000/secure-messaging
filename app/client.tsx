@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, act, Dispatch, SetStateAction, SubmitEventHandler } from "react";
 import { redirect, RedirectType } from "next/navigation";
-import { joinRoom, JoinRoom, MessageAction } from "trystero/nostr";
+import { joinRoom, MessageAction } from "@trystero-p2p/ws-relay";
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
@@ -42,7 +42,7 @@ function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmi
         }>
             <ContactButtonsList contacts={contacts} onClick={onClick} />
             <form onSubmit={event => handleSubmit(event)} style={{ margin: 0, padding: 0, display: 'contents' }}>
-                <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{ flex: 2.5, backgroundColor: 'red', margin: 0 }}></input>
+                <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{ flex: 2.5, backgroundColor: '#6495ed', margin: 0 }}></input>
             </form>
         </div>
     )
@@ -115,10 +115,10 @@ export async function addContact(contact: { name: string, key: string }, aesKey:
     const encoder = new TextEncoder()
     const encrypted = aes.encrypt(encoder.encode(JSON.stringify(dbContent)))
     await db.users.delete(edPubKey.toBase64())
-    await db.users.add({user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64()}, edPubKey.toBase64())
+    await db.users.add({ user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64() }, edPubKey.toBase64())
 }
 
-export async function removeContact(contact: {name: string, key: string}, aesKey: Uint8Array, edPubKey: Uint8Array) {
+export async function removeContact(contact: { name: string, key: string }, aesKey: Uint8Array, edPubKey: Uint8Array) {
     let dbContent = await getDBContent(edPubKey, aesKey);
     dbContent.contacts = dbContent.contacts.filter(item => item.name != contact.name || item.key != contact.key)
     const nonce = randomBytes(12);
@@ -126,19 +126,17 @@ export async function removeContact(contact: {name: string, key: string}, aesKey
     const encoder = new TextEncoder();
     const encrypted = aes.encrypt(encoder.encode(JSON.stringify(dbContent)))
     await db.users.delete(edPubKey.toBase64())
-    await db.users.add({user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64()}, edPubKey.toBase64())
+    await db.users.add({ user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64() }, edPubKey.toBase64())
 }
 
 export async function getDBContent(pubKey: Uint8Array, aesKey: Uint8Array) {
     const decoder = new TextDecoder()
-    const encryptedData = (await db.users.where('user').equals(pubKey.toBase64()).toArray())[0]
-    console.log(encryptedData)
+    const encryptedData = await db.users.get(pubKey.toBase64())
     if (!encryptedData) {
-        return {contacts: []}
+        return { contacts: [] }
     }
     const aes = gcm(aesKey, Uint8Array.fromBase64(encryptedData.nonce))
     const decrypted: { contacts: { name: string, key: string }[] } = JSON.parse(decoder.decode(aes.decrypt(Uint8Array.fromBase64(encryptedData.data))))
-    console.log(decrypted)
     return decrypted
 }
 
@@ -160,10 +158,8 @@ export function ClientPage() {
     const [contactKey, setContactKey] = useState(new Uint8Array(0))
     const [message, setMessage] = useState("")
     const [roomId, setRoomId] = useState("")
-    const [acceptedId, setAcceptedId] = useState("")
     const [tlsFinished, setTlsFinished] = useState<boolean>(false)
-    const [, setReloadState] = useState("")
-    const [, newTls] = useState("")
+    const [newTls, setNewTls] = useState("")
     const [changeDexie, newDexie] = useState("")
     const actionRef = useRef<MessageAction<Payload> | null>(null)
     const encoder = new TextEncoder()
@@ -200,6 +196,7 @@ export function ClientPage() {
         const edPrivKeyTemp = localStorage.getItem("edKeyPriv")
         if (aesKeyTemp === null || edPrivKeyTemp === null) {
             redirect("/login", RedirectType.replace)
+            return
         }
         if (aesKeyTemp != null && edPrivKeyTemp != null) {
             setAesKey(Uint8Array.fromBase64(aesKeyTemp))
@@ -213,32 +210,40 @@ export function ClientPage() {
         roomList.sort()
         const tempId = roomList.join("")
         const room = joinRoom({
-            appId: "com.example.chat"
+            appId: "username/custom-secure-chat-protcol",
+            relayConfig: {urls: ["wss://192.168.4.84:3001/relay"]}
         }, tempId)
+        room.onError((err) => console.error("Room error:", err));
+        console.log("Connected")
         console.log(tempId)
         setRoomId(tempId)
         const action = room.makeAction<Payload>("action");
+        let unsubscribeTls = () => {}
+        let unsubscribePeerJoin = () => {}
         if (!tlsFinished) {
             const tls = room.makeAction<tlsPayload>("tls")
-            tls.onMessage = (data, { peerId }) => {
+            unsubscribeTls = tls.onMessage((data) => {
+                console.log(data)
                 const tlsRecivedValue = data.value
                 if (ed25519.verify(Uint8Array.fromBase64(data.signature), encoder.encode(JSON.stringify(tlsRecivedValue)), Uint8Array.fromBase64(currentContact.key))) {
                     const [tempSelfKey, tempContactKey] = deriveKeys(x25519PrivKey, Uint8Array.fromBase64(data.value.key), selfRandom, Uint8Array.fromBase64(data.value.random))
                     setSelfKey(tempSelfKey)
                     setContactKey(tempContactKey)
                     setTlsFinished(true)
-                    setAcceptedId(peerId)
+                    console.log("TLS finished")
                 }
             }
-            room.onPeerJoin = peerId => {
+            )
+            unsubscribePeerJoin = room.onPeerJoin(({ peerId }) => {
                 const pubKey = x25519.getPublicKey(x25519PrivKey)
                 const tlsSendValue = { key: pubKey.toBase64(), random: selfRandom.toBase64() }
                 tls.send({ value: tlsSendValue, signature: ed25519.sign(encoder.encode(JSON.stringify(tlsSendValue)), Uint8Array.fromBase64(edPrivKeyTemp)).toBase64() }, { target: peerId })
+                console.log("TLS SENT")
             }
+            )
         }
         actionRef.current = action
-        action.onMessage = (data, { peerId }) => {
-            if (peerId === acceptedId) {
+        const unsubscribeAction = action.onMessage((data) => {
                 if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
                     const bytesData = Uint8Array.fromBase64(data.value)
                     const nonce = bytesData.slice(0, 12)
@@ -246,15 +251,21 @@ export function ClientPage() {
                     const decrypted = aes.decrypt(bytesData.slice(12))
                     addToCurrentMessages({ value: decoder.decode(decrypted), index: 0 });
                 }
-            }
-        }
 
-    }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
+        }
+        )
+        return () => {
+            unsubscribeTls()
+            unsubscribePeerJoin()
+            unsubscribeAction()
+            room.leave()
+        }
+    }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls ]
     )
 
     // get contacts from indexedb
     useEffect(() => {
-        if (edPubKey.length === 0 || edPubKey.length === 0) {return}
+        if (edPubKey.length === 0 || edPubKey.length === 0) { return }
         (async () => {
             setContacts((await getDBContent(edPubKey, aesKey)).contacts)
         })()
@@ -265,10 +276,6 @@ export function ClientPage() {
         setMessages(prev => [...prev, message])
     }
 
-    function reloadState() {
-        setReloadState(crypto.randomUUID())
-    }
-
     async function handleContactSubmit(event: React.SubmitEvent<HTMLFormElement>) {
         event.preventDefault()
         let newCont = true
@@ -277,7 +284,7 @@ export function ClientPage() {
                 if (contact.name === newContact) {
                     newCont = false
                     const contactToRemove = contacts.find(item => item.name === newContact)
-                    if (contactToRemove === undefined) {return}
+                    if (contactToRemove === undefined) { return }
                     await removeContact(contactToRemove, aesKey, edPubKey)
                     newDexie(crypto.randomUUID())
                 }
@@ -290,7 +297,6 @@ export function ClientPage() {
                 }
             }
             setNewContact("")
-            console.log("Sumbited")
         }
     }
 
@@ -301,15 +307,15 @@ export function ClientPage() {
         }
         const eventData = { name: event.currentTarget.textContent, key: event.currentTarget.dataset.id }
         setCurrentContact(eventData)
-        if (currentContact != eventData) {
+        if (currentContact !== eventData) {
             setTlsFinished(false)
-            newTls(crypto.randomUUID())
+            setNewTls(crypto.randomUUID())
         }
     }
 
     function handleSignOut() {
         localStorage.removeItem("aesKey")
-        localStorage.removeItem("edKey")
+        localStorage.removeItem("edKeyPriv")
         redirect("/login", RedirectType.replace)
     }
 
@@ -318,7 +324,6 @@ export function ClientPage() {
             event.preventDefault();
             if (message != '' && tlsFinished) {
                 messages.push({ value: message, index: 1 });
-                reloadState()
                 nonce = randomBytes(12)
                 aes = gcm(selfKey, nonce, nonce)
                 encrypted = aes.encrypt(encoder.encode(message))
@@ -334,7 +339,6 @@ export function ClientPage() {
 
     function shareIdButton() {
         navigator.clipboard.writeText(orgin + '/share?key=' + edPubKey.toBase64({ alphabet: 'base64url' }))
-        console.log("Button Pressed")
     }
 
     return (
