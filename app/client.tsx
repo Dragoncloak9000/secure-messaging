@@ -8,11 +8,13 @@ import { hkdf } from "@noble/hashes/hkdf.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
 import { db, Database } from "./db";
+import './app.css';
+import './main-page.css'
 
 
 function Header({ children }: { children: React.ReactNode }) {
     return (
-        <div style={{ flex: 2.5, backgroundColor: "#F2F0EF", display: 'grid', gridTemplateColumns: "1fr auto auto", borderBottom: 'solid', borderColor: 'darkgray' }}>
+        <div className="app-header header-main">
             {children}
         </div>
     )
@@ -21,13 +23,17 @@ function Header({ children }: { children: React.ReactNode }) {
 function ContactButton({ value, index, onClick }: { value: { name: string, key: string }, index: number, onClick: React.MouseEventHandler<HTMLButtonElement> }) {
     const [background, setBackground] = useState("transparent")
     return (
-        <button key={index} onMouseEnter={event => setBackground("lightgrey")} onMouseLeave={event => setBackground("transparent")} onClick={onClick} data-id={value.key} style={{ textAlign: 'left', padding: 5, outline: 'none', backgroundColor: background, backgroundRepeat: 'no-repeat', border: 'none', borderRadius: "5px" }}>{value.name}</button>
+        <button
+            className="contact-button" key={index}
+            onMouseEnter={event => setBackground("lightgrey")} onMouseLeave={event => setBackground("transparent")}
+            onClick={onClick} data-id={value.key} style={{ backgroundColor: background }}
+        >{value.name}</button>
     )
 }
 
 function ContactButtonsList({ contacts, onClick }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement> }) {
     return (
-        <div style={{ flex: 100, display: 'flex', flexDirection: 'column', paddingTop: '5%', paddingLeft: '5%', paddingRight: '5%' }}>
+        <div className="contact-button-list">
             {contacts.map((x, i) => (<ContactButton key={i} value={x} index={i} onClick={onClick} />))}
         </div>
     )
@@ -35,14 +41,10 @@ function ContactButtonsList({ contacts, onClick }: { contacts: { name: string, k
 
 function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmit }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement>, newContact: string, setNewContact: Dispatch<SetStateAction<string>>, handleSubmit: SubmitEventHandler<HTMLFormElement> }) {
     return (
-        <div style={{
-            flex: 1, backgroundColor: 'whitesmoke', display: 'flex', flexDirection: 'column', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0,
-            borderRight: "solid", borderColor: 'darkgray'
-        }
-        }>
+        <div className="contact-main-div">
             <ContactButtonsList contacts={contacts} onClick={onClick} />
-            <form onSubmit={event => handleSubmit(event)} style={{ margin: 0, padding: 0, display: 'contents' }}>
-                <input value={newContact} onChange={event => setNewContact(event.target.value)} style={{ flex: 2.5, backgroundColor: '#6495ed', margin: 0 }}></input>
+            <form className="contact-button-form" onSubmit={event => handleSubmit(event)}>
+                <input className="contact-input" value={newContact} onChange={event => setNewContact(event.target.value)}></input>
             </form>
         </div>
     )
@@ -51,14 +53,12 @@ function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmi
 function TextBox({ message, setMessage, handleKeyDown, connected }: { message: string, setMessage: Dispatch<SetStateAction<string>>, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, connected: boolean }) {
     if (connected) {
         return (
-            <textarea onKeyDown={event => {
+            <textarea className="message-textbox" onKeyDown={event => {
                 handleKeyDown(event)
                 if (event.key === 'Enter' && !event.shiftKey) {
                     setMessage("")
                 }
-            }} placeholder={"Enter Message"} value={message} onChange={event => setMessage(event.target.value)} style={{
-                fieldSizing: 'content', width: "100%", backgroundColor: '#6495ed', borderRadius: 10, padding: 5, resize: 'none'
-            }} />
+            }} placeholder={"Enter Message"} value={message} onChange={event => setMessage(event.target.value)} />
         )
     }
     else {
@@ -68,16 +68,16 @@ function TextBox({ message, setMessage, handleKeyDown, connected }: { message: s
 
 function MessageWindow({ messages, contact, handleKeyDown, message, setMessage, connected }: { messages: { index: number, value: string }[], contact: string, handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>, message: string, setMessage: Dispatch<SetStateAction<string>>, connected: boolean }) {
     return (
-        <div style={{ flex: 3, backgroundColor: 'lightgray', overflow: 'auto', scrollbarWidth: 'none', height: "100%", minHeight: 0 }}>
-            <div style={{ paddingBottom: 25, paddingLeft: "10%", paddingRight: '10%', paddingTop: '1%', margin: 0 }}><p style={{ backgroundColor: 'royalblue', textAlign: 'center', margin: 0, overflowX: 'visible', borderRadius: "20px" }}>{connected ? contact : "NOT CONNECTED"}</p></div>
+        <div className="message-main-div">
+            <div className="message-contact-header-div"><p className="message-contact-title">{connected ? contact : "NOT CONNECTED"}</p></div>
             {
                 messages.map((message, index) => (
                     <div key={index} style={{ display: 'flex', justifyContent: message.index === 0 ? 'flex-start' : 'flex-end', padding: 10 }}>
-                        <span style={{ backgroundColor: '#6495ed', borderRadius: 10, padding: 5, maxWidth: '35%', fieldSizing: 'content', overflowWrap: 'anywhere' }}>{message.value}</span>
+                        <span className="message-span">{message.value}</span>
                     </div>
                 ))
             }
-            <div style={{ display: 'flex', marginLeft: 'auto', padding: 10, minWidth: '10%', maxWidth: '35%' }}>
+            <div className="message-textbox-div">
                 <TextBox message={message} setMessage={setMessage} handleKeyDown={handleKeyDown} connected={connected} />
             </div>
         </div>
@@ -211,15 +211,15 @@ export function ClientPage() {
         const tempId = roomList.join("")
         const room = joinRoom({
             appId: "username/custom-secure-chat-protcol",
-            relayConfig: {urls: ["wss://192.168.4.84:3001/relay"]}
+            relayConfig: { urls: ["wss://192.168.4.84:3001/relay"] }
         }, tempId)
         room.onError((err) => console.error("Room error:", err));
         console.log("Connected")
         console.log(tempId)
         setRoomId(tempId)
         const action = room.makeAction<Payload>("action");
-        let unsubscribeTls = () => {}
-        let unsubscribePeerJoin = () => {}
+        let unsubscribeTls = () => { }
+        let unsubscribePeerJoin = () => { }
         if (!tlsFinished) {
             const tls = room.makeAction<tlsPayload>("tls")
             unsubscribeTls = tls.onMessage((data) => {
@@ -244,13 +244,13 @@ export function ClientPage() {
         }
         actionRef.current = action
         const unsubscribeAction = action.onMessage((data) => {
-                if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
-                    const bytesData = Uint8Array.fromBase64(data.value)
-                    const nonce = bytesData.slice(0, 12)
-                    aes = gcm(contactKey, nonce, nonce)
-                    const decrypted = aes.decrypt(bytesData.slice(12))
-                    addToCurrentMessages({ value: decoder.decode(decrypted), index: 0 });
-                }
+            if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
+                const bytesData = Uint8Array.fromBase64(data.value)
+                const nonce = bytesData.slice(0, 12)
+                aes = gcm(contactKey, nonce, nonce)
+                const decrypted = aes.decrypt(bytesData.slice(12))
+                addToCurrentMessages({ value: decoder.decode(decrypted), index: 0 });
+            }
 
         }
         )
@@ -260,7 +260,7 @@ export function ClientPage() {
             unsubscribeAction()
             room.leave()
         }
-    }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls ]
+    }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
     )
 
     // get contacts from indexedb
@@ -342,13 +342,13 @@ export function ClientPage() {
     }
 
     return (
-        <div style={{ height: "100vh", margin: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="app-main-div main-div">
             <Header>
-                <h1 style={{ margin: 0, justifySelf: 'center' }}>Secure Messaging App</h1>
+                <h1 className="header-title">Secure Messaging App</h1>
                 <button onClick={shareIdButton}>Share Id</button>
-                <button onClick={handleSignOut} style={{ justifySelf: 'right' }}>Sign Out</button>
+                <button onClick={handleSignOut}>Sign Out</button>
             </Header>
-            <div style={{ flex: 100, display: 'flex', flexDirection: 'row', minHeight: 0 }}>
+            <div className="message-contact-div">
                 <ContactList contacts={contacts} onClick={handeClick} newContact={newContact} setNewContact={setNewContact} handleSubmit={handleContactSubmit} />
                 <MessageWindow messages={messages} contact={currentContact.name} handleKeyDown={submitMessage} message={message} setMessage={setMessage} connected={tlsFinished} />
             </div>

@@ -2,13 +2,14 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:https";
 import { createWsRelayServer } from "@trystero-p2p/ws-relay/server";
 
-const httpsServer = createServer({
+const server = createServer({
   key: readFileSync("./certificates/localhost-key.pem"),
   cert: readFileSync("./certificates/wss-cert.pem"),
 });
+// const server = createServer()
 
 const relay = createWsRelayServer({
-  server: httpsServer,
+  server: server,
   path: "/relay",
   maxTopicLength: 256,
   maxSubscriptionsPerSocket: 128,
@@ -19,6 +20,6 @@ const relay = createWsRelayServer({
 
 await relay.ready;
 
-httpsServer.listen(3001, "0.0.0.0", () => {
-  console.log("WSS relay listening at wss://your-domain.example/relay");
+server.listen(3001, "0.0.0.0", () => {
+  console.log(server.address())
 });
