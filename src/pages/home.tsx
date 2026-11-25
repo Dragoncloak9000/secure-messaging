@@ -130,7 +130,6 @@ export default function Home() {
     const [roomId, setRoomId] = useState("")
     const [tlsFinished, setTlsFinished] = useState<boolean>(false)
     const [newTls, setNewTls] = useState("")
-    const [changeDexie, newDexie] = useState("")
     const actionRef = useRef<MessageAction<Payload> | null>(null)
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()
@@ -247,13 +246,11 @@ export default function Home() {
                     newCont = false
                     const contactToRemove = contacts.find(item => item.name === newContact)
                     if (contactToRemove === undefined) { return }
-                    newDexie(crypto.randomUUID())
                 }
             })
             if (newCont) {
                 const key = window.prompt("Person's Key")
                 if (key != null) {
-                    newDexie(crypto.randomUUID())
                 }
             }
             setNewContact("")

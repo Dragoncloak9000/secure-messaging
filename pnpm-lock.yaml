@@ -23,6 +23,12 @@ importers:
       '@trystero-p2p/ws-relay':
         specifier: ^0.27.0
         version: 0.27.0
+      bip39:
+        specifier: ^3.1.2
+        version: 3.1.2
+      genosdb:
+        specifier: ^0.37.0
+        version: 0.37.0
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -261,6 +267,10 @@ packages:
   '@noble/curves@2.4.0':
     resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
     engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@1.8.0':
+    resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
+    engines: {node: ^14.21.3 || >=16}
 
   '@noble/hashes@2.4.0':
     resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
@@ -517,6 +527,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
+  bip39@3.1.2:
+    resolution: {integrity: sha512-inxKLEH+Weos8f5rBYNKuOrpOIcNWtKnrLur9x72s4Cb8w4Mm0jJktUPkev7+1pQuivxFqkiut9+AcrwunLHxA==}
+
   brace-expansion@5.1.0:
     resolution: {integrity: sha512-aa11Dv491GKnYqxaul3aRJ0szew7yMJMfZPnqD44NjGrZXoj62l41OEDDpdpC4eE2P88vBFfLuSyRhpG91NUvg==}
     engines: {node: 20 || >=22}
@@ -661,6 +674,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  genosdb@0.37.0:
+    resolution: {integrity: sha512-nO2sVwAlgcsmHWzE9DYTKAVTrw49s5vE9LUNTCSHpkNqTrgSyTzDTtsTcqakwnLFGxRpQI02pED23jaB7TaNJQ==}
 
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
@@ -1289,6 +1305,8 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.4.0
 
+  '@noble/hashes@1.8.0': {}
+
   '@noble/hashes@2.4.0': {}
 
   '@noble/secp256k1@3.2.0': {}
@@ -1500,6 +1518,10 @@ snapshots:
 
   baseline-browser-mapping@2.11.39: {}
 
+  bip39@3.1.2:
+    dependencies:
+      '@noble/hashes': 1.8.0
+
   brace-expansion@5.1.0:
     dependencies:
       balanced-match: 4.0.4
@@ -1658,6 +1680,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  genosdb@0.37.0: {}
 
   gensync@1.0.0-beta.2: {}
 
