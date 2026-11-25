@@ -10,6 +10,7 @@ import { gcm } from "@noble/ciphers/aes.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
 import "../App.css"
 import './css/home.css'
+import { useNavigate } from "react-router-dom";
 
 
 function Header({ children }: { children: React.ReactNode }) {
@@ -112,10 +113,11 @@ type Payload = { value: string, signature: string }
 type tlsPayload = { value: { key: string, random: string }, signature: string }
 
 export default function Home() {
+    const nav = useNavigate()
     const [orgin, setOrgin] = useState("")
     const [messages, setMessages] = useState<{ value: string, index: number }[]>([])
     const [currentContact, setCurrentContact] = useState({ name: "Username", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" })
-    const [contacts, setContacts] = useState<{ name: string, key: string }[]>([])
+    const [contacts, setContacts] = useState<{ name: string, key: string }[]>([{name: "P2", key: "yZ18+o9FdzDIEA1ZBVQz7LSELnYmM3D37xb1oWo633w="}, {name: "P1", key: "T1eBODe41C+C8VxExmDuNt85lryhpAVB2QBPWAIQ4CM="}])
     const [newContact, setNewContact] = useState("")
     const [aesKey, setAesKey] = useState<Uint8Array>(new Uint8Array(0))
     const [edPrivKey, setEdPrivKey] = useState<Uint8Array>(new Uint8Array(0))
@@ -163,6 +165,7 @@ export default function Home() {
         const aesKeyTemp = localStorage.getItem("aesKey")
         const edPrivKeyTemp = localStorage.getItem("edKeyPriv")
         if (aesKeyTemp === null || edPrivKeyTemp === null) {
+            nav("/login")
             return
         }
         if (aesKeyTemp != null && edPrivKeyTemp != null) {
@@ -273,7 +276,7 @@ export default function Home() {
     function handleSignOut() {
         localStorage.removeItem("aesKey")
         localStorage.removeItem("edKeyPriv")
-        redirect("/login", RedirectType.replace)
+        nav("/login")
     }
 
     function submitMessage(event: React.KeyboardEvent<HTMLTextAreaElement>) {
