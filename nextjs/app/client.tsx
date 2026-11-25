@@ -7,7 +7,6 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import { randomBytes } from "@noble/ciphers/utils.js";
-import { db, Database } from "./db";
 import './app.css';
 import './main-page.css'
 
@@ -107,38 +106,6 @@ function deriveKeys(privKey: Uint8Array, pubKey: Uint8Array, selfRand: Uint8Arra
     return [selfKey, contactKey]
 }
 
-export async function addContact(contact: { name: string, key: string }, aesKey: Uint8Array, edPubKey: Uint8Array) {
-    const dbContent = await getDBContent(edPubKey, aesKey);
-    dbContent.contacts.push(contact);
-    const nonce = randomBytes(12);
-    const aes = gcm(aesKey, nonce);
-    const encoder = new TextEncoder()
-    const encrypted = aes.encrypt(encoder.encode(JSON.stringify(dbContent)))
-    await db.users.delete(edPubKey.toBase64())
-    await db.users.add({ user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64() }, edPubKey.toBase64())
-}
-
-export async function removeContact(contact: { name: string, key: string }, aesKey: Uint8Array, edPubKey: Uint8Array) {
-    let dbContent = await getDBContent(edPubKey, aesKey);
-    dbContent.contacts = dbContent.contacts.filter(item => item.name != contact.name || item.key != contact.key)
-    const nonce = randomBytes(12);
-    const aes = gcm(aesKey, nonce)
-    const encoder = new TextEncoder();
-    const encrypted = aes.encrypt(encoder.encode(JSON.stringify(dbContent)))
-    await db.users.delete(edPubKey.toBase64())
-    await db.users.add({ user: edPubKey.toBase64(), data: encrypted.toBase64(), nonce: nonce.toBase64() }, edPubKey.toBase64())
-}
-
-export async function getDBContent(pubKey: Uint8Array, aesKey: Uint8Array) {
-    const decoder = new TextDecoder()
-    const encryptedData = await db.users.get(pubKey.toBase64())
-    if (!encryptedData) {
-        return { contacts: [] }
-    }
-    const aes = gcm(aesKey, Uint8Array.fromBase64(encryptedData.nonce))
-    const decrypted: { contacts: { name: string, key: string }[] } = JSON.parse(decoder.decode(aes.decrypt(Uint8Array.fromBase64(encryptedData.data))))
-    return decrypted
-}
 
 type Payload = { value: string, signature: string }
 type tlsPayload = { value: { key: string, random: string }, signature: string }
@@ -263,14 +230,6 @@ export function ClientPage() {
     }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
     )
 
-    // get contacts from indexedb
-    useEffect(() => {
-        if (edPubKey.length === 0 || edPubKey.length === 0) { return }
-        (async () => {
-            setContacts((await getDBContent(edPubKey, aesKey)).contacts)
-        })()
-    }, [changeDexie, aesKey, edPubKey])
-
 
     function addToCurrentMessages(message: { value: string, index: number }) {
         setMessages(prev => [...prev, message])
@@ -285,14 +244,12 @@ export function ClientPage() {
                     newCont = false
                     const contactToRemove = contacts.find(item => item.name === newContact)
                     if (contactToRemove === undefined) { return }
-                    await removeContact(contactToRemove, aesKey, edPubKey)
                     newDexie(crypto.randomUUID())
                 }
             })
             if (newCont) {
                 const key = window.prompt("Person's Key")
                 if (key != null) {
-                    await addContact({ name: newContact, key: key }, aesKey, edPubKey)
                     newDexie(crypto.randomUUID())
                 }
             }
