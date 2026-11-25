@@ -184,7 +184,6 @@ export default function Home() {
             relayConfig: { urls: ["wss://192.168.4.84:3001/relay"] }
         }, tempId)
         room.onError((err) => console.error("Room error:", err));
-        console.log("Connected")
         console.log(tempId)
         setRoomId(tempId)
         const action = room.makeAction<Payload>("action");
@@ -205,6 +204,7 @@ export default function Home() {
             }
             )
             unsubscribePeerJoin = room.onPeerJoin(({ peerId }) => {
+                console.log(`PeerId ${peerId} joined`)
                 const pubKey = x25519.getPublicKey(x25519PrivKey)
                 const tlsSendValue = { key: pubKey.toBase64(), random: selfRandom.toBase64() }
                 tls.send({ value: tlsSendValue, signature: ed25519.sign(encoder.encode(JSON.stringify(tlsSendValue)), Uint8Array.fromBase64(edPrivKeyTemp)).toBase64() }, { target: peerId })

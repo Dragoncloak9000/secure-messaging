@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -13,6 +13,7 @@
     "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
+    "@trystero-p2p/nostr": "^0.27.0",
     "@trystero-p2p/ws-relay": "^0.27.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
