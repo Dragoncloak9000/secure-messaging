@@ -5,4 +5,4 @@ const room = db.room
 if (!room || !db.sm) {
     throw new Error("LACKS A NEEDED PROPERTY 🤬🤬")
 }
-export {room, db}
+export default db;

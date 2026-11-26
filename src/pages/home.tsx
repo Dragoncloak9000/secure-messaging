@@ -1,8 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction, SubmitEventHandler } from "react";
-import { joinRoom } from "@trystero-p2p/ws-relay";
-import type { MessageAction } from "@trystero-p2p/ws-relay";
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
@@ -11,7 +9,15 @@ import { randomBytes } from "@noble/ciphers/utils.js";
 import "../App.css"
 import './css/home.css'
 import { useNavigate } from "react-router-dom";
+import { entropyToMnemonic } from "@scure/bip39";
+import { wordlist } from "@scure/bip39/wordlists/english.js";
+import { gdb } from "genosdb";
 
+const db = await gdb("Secure-Chat-by-Dragoncloak9000", { rtc: true, sm: { superAdmins: [], resume: false } })
+if (!db.room || !db.sm) {
+    throw new Error("No room or securitity manager")
+}
+const channel = db.room.channel('main')
 
 function Header({ children }: { children: React.ReactNode }) {
     return (
@@ -21,18 +27,19 @@ function Header({ children }: { children: React.ReactNode }) {
     )
 }
 
-function ContactButton({ value, index, onClick }: { value: { name: string, key: string }, index: number, onClick: React.MouseEventHandler<HTMLButtonElement> }) {
+function ContactButton({ value, index, onClick }: { value: { name: string, key: string, address: string }, index: number, onClick: React.MouseEventHandler<HTMLButtonElement> }) {
     const [background, setBackground] = useState("transparent")
     return (
         <button
             className="contact-button" key={index}
             onMouseEnter={event => setBackground("lightgrey")} onMouseLeave={event => setBackground("transparent")}
             onClick={onClick} data-id={value.key} style={{ backgroundColor: background }}
+            data-address={value.address}
         >{value.name}</button>
     )
 }
 
-function ContactButtonsList({ contacts, onClick }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement> }) {
+function ContactButtonsList({ contacts, onClick }: { contacts: { name: string, key: string, address: string }[], onClick: React.MouseEventHandler<HTMLButtonElement> }) {
     return (
         <div className="contact-button-list">
             {contacts.map((x, i) => (<ContactButton key={i} value={x} index={i} onClick={onClick} />))}
@@ -40,7 +47,7 @@ function ContactButtonsList({ contacts, onClick }: { contacts: { name: string, k
     )
 }
 
-function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmit }: { contacts: { name: string, key: string }[], onClick: React.MouseEventHandler<HTMLButtonElement>, newContact: string, setNewContact: Dispatch<SetStateAction<string>>, handleSubmit: SubmitEventHandler<HTMLFormElement> }) {
+function ContactList({ contacts, onClick, newContact, setNewContact, handleSubmit }: { contacts: { name: string, key: string, address: string }[], onClick: React.MouseEventHandler<HTMLButtonElement>, newContact: string, setNewContact: Dispatch<SetStateAction<string>>, handleSubmit: SubmitEventHandler<HTMLFormElement> }) {
     return (
         <div className="contact-main-div">
             <ContactButtonsList contacts={contacts} onClick={onClick} />
@@ -110,14 +117,17 @@ function deriveKeys(privKey: Uint8Array, pubKey: Uint8Array, selfRand: Uint8Arra
 
 
 type Payload = { value: string, signature: string }
-type tlsPayload = { value: { key: string, random: string }, signature: string }
 
 export default function Home() {
     const nav = useNavigate()
+    const [username, setUsername] = useState("")
+    const [address, setAddress] = useState("")
+    const [sentTls, setSentTls] = useState(false)
+    const [contactKey, setContactKey] = useState(new Uint8Array(0))
     const [orgin, setOrgin] = useState("")
     const [messages, setMessages] = useState<{ value: string, index: number }[]>([])
-    const [currentContact, setCurrentContact] = useState({ name: "Username", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" })
-    const [contacts, setContacts] = useState<{ name: string, key: string }[]>([{name: "P2", key: "yZ18+o9FdzDIEA1ZBVQz7LSELnYmM3D37xb1oWo633w="}, {name: "P1", key: "T1eBODe41C+C8VxExmDuNt85lryhpAVB2QBPWAIQ4CM="}])
+    const [currentContact, setCurrentContact] = useState({ name: "Username", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", address: "0x" })
+    const [contacts, setContacts] = useState<{ name: string, key: string, address: string }[]>([{ name: "b b (p2)", key: "yZ18+o9FdzDIEA1ZBVQz7LSELnYmM3D37xb1oWo633w=", address: "0xA4e2076AeEb223C0D146e444211Dbb7C06D6B33a" }, { name: "a a (p1)", key: "T1eBODe41C+C8VxExmDuNt85lryhpAVB2QBPWAIQ4CM=", address: "0x1F5d6AEF76f2d8b330aB457c2CF4AF41E4f7C402" }])
     const [newContact, setNewContact] = useState("")
     const [aesKey, setAesKey] = useState<Uint8Array>(new Uint8Array(0))
     const [edPrivKey, setEdPrivKey] = useState<Uint8Array>(new Uint8Array(0))
@@ -125,17 +135,55 @@ export default function Home() {
     const [x25519PrivKey, setX25519PrivKey] = useState(new Uint8Array(0))
     const [selfRandom, setSelfRandom] = useState(new Uint8Array(0))
     const [selfKey, setSelfKey] = useState(new Uint8Array(0))
-    const [contactKey, setContactKey] = useState(new Uint8Array(0))
     const [message, setMessage] = useState("")
-    const [roomId, setRoomId] = useState("")
     const [tlsFinished, setTlsFinished] = useState<boolean>(false)
     const [newTls, setNewTls] = useState("")
-    const actionRef = useRef<MessageAction<Payload> | null>(null)
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()
+    const stateRef = useRef({
+        edPubKey,
+        currentContact,
+        sentTls,
+        x25519PrivKey,
+        selfRandom,
+        edPrivKey,
+        contactKey
+    })
+    stateRef.current = { edPubKey, currentContact, sentTls, x25519PrivKey, selfRandom, edPrivKey, contactKey }
     let nonce: Uint8Array;
     let aes;
     let encrypted: Uint8Array;
+
+    useEffect(() => {
+        channel.on("message", (data, peerId) => {
+            peerId;
+            if (data.target === stateRef.current.edPubKey.toBase64()) {
+                if (data.type === "tls") {
+                    if (!stateRef.current.sentTls) {
+                        const message = { key: x25519.getPublicKey(stateRef.current.x25519PrivKey).toBase64(), random: stateRef.current.selfRandom.toBase64() }
+                        const messageBytes = encoder.encode(JSON.stringify(message))
+                        const signature = ed25519.sign(messageBytes, stateRef.current.edPrivKey).toBase64()
+                        channel.send({ payload: { message: message, signature: signature }, type: "tls", target: stateRef.current.currentContact.key});
+                        setSentTls(true)
+                    }
+                    const message: { key: string, random: string } = data.payload.message
+                    const signature: string = data.payload.signature
+                    const messageBytes = encoder.encode(JSON.stringify(message))
+                    const valid = ed25519.verify(Uint8Array.fromBase64(signature), messageBytes, Uint8Array.fromBase64(stateRef.current.currentContact.key))
+                    if (!valid) { return }
+                    const [tempSelf, tempContact] = deriveKeys(stateRef.current.x25519PrivKey, Uint8Array.fromBase64(message.key), stateRef.current.selfRandom, Uint8Array.fromBase64(message.random))
+                    setSelfKey(tempSelf)
+                    setContactKey(tempContact)
+                    setTlsFinished(true)
+                }
+                else if (data.type === "message") {
+                    console.log("Recived Message")
+                    handlePayload(data)
+                }
+            }
+        }
+        )
+    }, [])
 
     // get orgin
     useEffect(() => {
@@ -152,90 +200,49 @@ export default function Home() {
         }
     }, [newTls])
 
-    // tls and room logic
+    //localstorage
     useEffect(() => {
-        if (x25519PrivKey.length === 0) {
-            return;
-        }
-        if (selfRandom.length === 0) {
-            return;
-        }
-        const encoder = new TextEncoder()
-        const aesKeyTemp = localStorage.getItem("aesKey")
-        const edPrivKeyTemp = localStorage.getItem("edKeyPriv")
-        if (aesKeyTemp === null || edPrivKeyTemp === null) {
+        const aes = localStorage.getItem("aesKey")
+        const ed = localStorage.getItem("edKeyPriv")
+        const name = localStorage.getItem("username")
+        if (aes === null || ed === null || name === null) {
             nav("/login")
             return
         }
-        if (aesKeyTemp != null && edPrivKeyTemp != null) {
-            setAesKey(Uint8Array.fromBase64(aesKeyTemp))
-            setEdPrivKey(Uint8Array.fromBase64(edPrivKeyTemp))
-            setEdPubKey(ed25519.getPublicKey(Uint8Array.fromBase64(edPrivKeyTemp)))
-        }
-        if (edPubKey.length === 0 && edPrivKey.length != 0) {
-            setEdPubKey(ed25519.getPublicKey(edPrivKey))
-        }
-        const roomList = [currentContact.key, ed25519.getPublicKey(Uint8Array.fromBase64(edPrivKeyTemp)).toBase64()]
-        roomList.sort()
-        const tempId = roomList.join("")
-        const room = joinRoom({
-            appId: "username/custom-secure-chat-protcol",
-            relayConfig: { urls: ["wss://192.168.4.84:3001/relay"] }
-        }, tempId)
-        room.onError((err) => console.error("Room error:", err));
-        console.log(tempId)
-        setRoomId(tempId)
-        const action = room.makeAction<Payload>("action");
-        let unsubscribeTls = () => { }
-        let unsubscribePeerJoin = () => { }
-        if (!tlsFinished) {
-            const tls = room.makeAction<tlsPayload>("tls")
-            unsubscribeTls = tls.onMessage((data) => {
-                console.log(data)
-                const tlsRecivedValue = data.value
-                if (ed25519.verify(Uint8Array.fromBase64(data.signature), encoder.encode(JSON.stringify(tlsRecivedValue)), Uint8Array.fromBase64(currentContact.key))) {
-                    const [tempSelfKey, tempContactKey] = deriveKeys(x25519PrivKey, Uint8Array.fromBase64(data.value.key), selfRandom, Uint8Array.fromBase64(data.value.random))
-                    setSelfKey(tempSelfKey)
-                    setContactKey(tempContactKey)
-                    setTlsFinished(true)
-                    console.log("TLS finished")
-                }
-            }
-            )
-            unsubscribePeerJoin = room.onPeerJoin(({ peerId }) => {
-                console.log(`PeerId ${peerId} joined`)
-                const pubKey = x25519.getPublicKey(x25519PrivKey)
-                const tlsSendValue = { key: pubKey.toBase64(), random: selfRandom.toBase64() }
-                tls.send({ value: tlsSendValue, signature: ed25519.sign(encoder.encode(JSON.stringify(tlsSendValue)), Uint8Array.fromBase64(edPrivKeyTemp)).toBase64() }, { target: peerId })
-                console.log("TLS SENT")
-            }
-            )
-        }
-        actionRef.current = action
-        const unsubscribeAction = action.onMessage((data) => {
-            if (ed25519.verify(Uint8Array.fromBase64(data.signature), Uint8Array.fromBase64(data.value), Uint8Array.fromBase64(currentContact.key))) {
-                const bytesData = Uint8Array.fromBase64(data.value)
-                const nonce = bytesData.slice(0, 12)
-                aes = gcm(contactKey, nonce, nonce)
-                const decrypted = aes.decrypt(bytesData.slice(12))
-                addToCurrentMessages({ value: decoder.decode(decrypted), index: 0 });
-            }
+        setAesKey(Uint8Array.fromBase64(aes))
+        setEdPrivKey(Uint8Array.fromBase64(ed))
+        setEdPubKey(ed25519.getPublicKey(Uint8Array.fromBase64(ed)))
+        setUsername(name)
+    }, [])
 
+    // tls and room logic
+    useEffect(() => {
+        if (x25519PrivKey.length === 0 || selfRandom.length === 0 || edPrivKey.length === 0) {
+            return;
         }
-        )
-        return () => {
-            unsubscribeTls()
-            unsubscribePeerJoin()
-            unsubscribeAction()
-            room.leave()
-        }
-    }, [x25519PrivKey, selfRandom, currentContact, contactKey, newTls]
-    )
+        const message = { key: x25519.getPublicKey(x25519PrivKey).toBase64(), random: selfRandom.toBase64() }
+        const messageBytes = encoder.encode(JSON.stringify(message))
+        const signature = ed25519.sign(messageBytes, edPrivKey).toBase64()
+        channel.send({ payload: { message: message, signature: signature }, type: "tls", target: currentContact.key, selfKey: edPubKey.toBase64() });
+        // }, [])
+    }, [x25519PrivKey, selfRandom, edPrivKey, currentContact, sentTls])
 
 
-    function addToCurrentMessages(message: { value: string, index: number }) {
-        setMessages(prev => [...prev, message])
-    }
+    useEffect(() => {
+        if (edPrivKey.length === 0) {
+            return
+        }
+        const setMnemonic = async () => {
+
+            const mn = entropyToMnemonic(edPrivKey, wordlist)
+            await db.sm?.loginOrRecoverUserWithMnemonic(mn)
+            const tempAddress = db.sm?.getActiveEthAddress()
+            if (!tempAddress) { return }
+            setAddress(tempAddress)
+        }
+        setMnemonic()
+    }, [aesKey, edPrivKey])
+
 
     async function handleContactSubmit(event: React.SubmitEvent<HTMLFormElement>) {
         event.preventDefault()
@@ -259,13 +266,14 @@ export default function Home() {
 
 
     function handeClick(event: React.MouseEvent<HTMLButtonElement>) {
-        if (event.currentTarget.dataset.id === undefined) {
+        if (!event.currentTarget.dataset.id || !event.currentTarget.dataset.address) {
             return;
         }
-        const eventData = { name: event.currentTarget.textContent, key: event.currentTarget.dataset.id }
+        const eventData = { name: event.currentTarget.textContent, key: event.currentTarget.dataset.id, address: event.currentTarget.dataset.address }
         setCurrentContact(eventData)
         if (currentContact !== eventData) {
             setTlsFinished(false)
+            setSentTls(false)
             setNewTls(crypto.randomUUID())
         }
     }
@@ -274,6 +282,18 @@ export default function Home() {
         localStorage.removeItem("aesKey")
         localStorage.removeItem("edKeyPriv")
         nav("/login")
+    }
+
+    function handlePayload(payload: { payload: { value: string, signature: string }, type: string }) {
+        const message = Uint8Array.fromBase64(payload.payload.value)
+        const signature = Uint8Array.fromBase64(payload.payload.signature)
+        const valid = ed25519.verify(signature, message, Uint8Array.fromBase64(stateRef.current.currentContact.key))
+        console.log(valid)
+        if (!valid) { return }
+        const nonce = message.slice(0, 12)
+        const aes = gcm(stateRef.current.contactKey, nonce, nonce)
+        const decrypted = decoder.decode(aes.decrypt(message.slice(12)))
+        setMessages(prev => [...prev, { value: decrypted, index: 0 }])
     }
 
     function submitMessage(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -287,7 +307,7 @@ export default function Home() {
                 encoder.encode(message)
                 const messagePayload = { value: combineBytes([nonce, encrypted]).toBase64(), signature: ed25519.sign(combineBytes([nonce, encrypted]), edPrivKey).toBase64() }
                 console.log(messagePayload)
-                actionRef.current?.send(messagePayload)
+                channel.send({ payload: messagePayload, type: "message", target: currentContact.key })
             }
         }
         else {

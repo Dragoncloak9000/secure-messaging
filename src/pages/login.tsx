@@ -20,6 +20,7 @@ export default function LoginPage() {
             const edKey = hkdf(sha256, main, hkdfSalt, Uint8Array.from([69, 100, 50, 53, 53, 49, 57, 45, 75, 101, 121]), 32)
             localStorage.setItem("aesKey", aesKey.toBase64())
             localStorage.setItem("edKeyPriv", edKey.toBase64())
+            localStorage.setItem("username", username)
             setUsername("")
             setPassword("")
             navigate("/")
